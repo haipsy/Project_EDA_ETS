@@ -1,7 +1,10 @@
-# app.py
 import streamlit as st
+import numpy as np
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
+import plotly.io as pio
+from plotly.subplots import make_subplots
 import os
 from io import BytesIO
 from streamlit_option_menu import option_menu
@@ -88,7 +91,6 @@ h2, h3, h4, label, .st-emotion-cache-1v0mbdj, .st-emotion-cache-1cypcdb {
 </style>
 """, unsafe_allow_html=True)
 
-
 # ==============================
 # OPTIONAL CUSTOM CSS
 # ==============================
@@ -116,32 +118,38 @@ color_palette = [
 # ==============================
 # LOAD DATA
 # ==============================
-DEFAULT_FILE = "flights_weather_sampled.csv"
+DEFAULT_FILE = "flights_cleaned_fix.parquet"
 
 @st.cache_data
-def load_csv(path):
-    df = pd.read_csv(path)
+def load_data(path):
+    if path.endswith(".parquet"):
+        df = pd.read_parquet(path)
+    else:
+        df = pd.read_csv(path)
     df = df.loc[:, ~df.columns.duplicated()]
     return df
 
 df = None
 if os.path.exists(DEFAULT_FILE):
     try:
-        df = load_csv(DEFAULT_FILE)
+        df = load_data(DEFAULT_FILE)
         st.sidebar.success(f"✅ File dimuat: {DEFAULT_FILE}")
     except Exception as e:
-        st.sidebar.error(f"Gagal membaca file: {e}")
+        st.sidebar.error(f"Gagal membaca file lokal: {e}")
 else:
-    uploaded = st.sidebar.file_uploader("📂 Upload dataset CSV", type=["csv"])
+    uploaded = st.sidebar.file_uploader("📂 Upload dataset (CSV/Parquet)", type=["csv", "parquet"])
     if uploaded:
         try:
-            df = load_csv(uploaded)
+            if uploaded.name.endswith(".parquet"):
+                df = pd.read_parquet(uploaded)
+            else:
+                df = pd.read_csv(uploaded)
             st.sidebar.success("✅ Dataset berhasil di-upload.")
         except Exception as e:
             st.sidebar.error(f"Gagal memuat file upload: {e}")
 
 if df is None:
-    st.warning("⚠️ Silakan upload file CSV atau pastikan file 'flights_weather_sampled.csv' ada di folder project.")
+    st.warning("⚠️ Silakan upload file dataset atau pastikan file lokal tersedia.")
     st.stop()
 
 # ==============================
@@ -158,10 +166,9 @@ for col in numeric_cols:
 if "date" in df.columns:
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
 
-
+# ==============================
 # SIDEBAR MENU
 # ==============================
-# Sidebar Navigation
 with st.sidebar:
     selected = option_menu(
         "Dashboard Menu",
@@ -187,9 +194,6 @@ with st.sidebar:
             "nav-link:hover": {"background-color": "#005bbb"},
         },
     )
-with open("style.css") as f:
-    st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
-
 
 st.sidebar.markdown("---")
 use_full = st.sidebar.checkbox("Gunakan seluruh dataset (bisa lambat)", value=False)
@@ -197,9 +201,7 @@ sample_n = None if use_full else st.sidebar.slider("Sample data (rows):", 1000, 
 
 # ==============================
 # PAGE: HOME
-# ==============================
 if selected == "Home":
-    # ====== Header dengan Logo dan Judul sejajar ======
     col1, col2, col3 = st.columns([1, 3, 1])
 
     with col1:
@@ -208,12 +210,14 @@ if selected == "Home":
     with col2:
         st.markdown(
             """
-            <h1 style='text-align:center; margin-bottom:0;'> Dashboard Analisis Delay Penerbangan & Cuaca</h1>
+            <h1 style='text-align:center; margin-bottom:0;'>Dashboard Analisis Delay Penerbangan & Cuaca</h1>
             <h4 style='text-align:center; color:#00BFFF; margin-top:4px;'>
                 Analisis keterlambatan penerbangan dan pengaruh cuaca di New York 2013 
             </h4>
             <p style='text-align:center; font-size:15px; margin-top:-10px;'>
-                Via Amanda, Muhammad Haikal Pasya Abdillah, Angelina Nirmala Puteri Dika Praktiko, Siti Rania Azaria, Aurelia Krisnanti Wijaya, Maulida Shifa Annisa | Kelompok 2 |  UPN "Veteran" Jawa Timur
+                Via Amanda, Muhammad Haikal Pasya Abdillah, Angelina Nirmala Puteri Dika Praktiko, 
+                Siti Rania Azaria, Aurelia Krisnanti Wijaya, Maulida Shifa Annisa | Kelompok 2 |  
+                UPN "Veteran" Jawa Timur
             </p>
             """,
             unsafe_allow_html=True
@@ -224,32 +228,51 @@ if selected == "Home":
 
     st.markdown("<hr>", unsafe_allow_html=True)
 
-    # ====== Konten Tengah ======
-    colA, colB, colC = st.columns([1, 2, 1])
-    with colB:
-        st.markdown(
-            """
-            <h3 style='text-align:center;'>🌦️ Bagaimana Cuaca Mempengaruhi Keterlambatan Penerbangan?</h3>
-            <p style='text-align:justify; font-size:16px;'>
-                Perusahaan penerbangan harus menjaga kepuasan pelanggan karena kualitas pelayanan, terutama ketepatan waktu, sangat berpengaruh terhadap citra dan kinerja perusahaan. Peningkatan kualitas pelayanan memang membutuhkan biaya operasional yang lebih tinggi, namun citra baik yang terbentuk dapat meningkatkan kepercayaan dan penjualan tiket. Ketepatan waktu menjadi indikator penting dalam menilai kualitas pelayanan maskapai karena keterlambatan dapat merugikan penumpang dan perusahaan. Oleh sebab itu, setiap bentuk keterlambatan perlu dianalisis untuk menemukan faktor penyebabnya.
-            </p>
-            <p style='text-align:justify; font-size:16px;'>
-                Salah satu faktor yang diduga mempengaruhi keterlambatan adalah kondisi cuaca, seperti hujan deras, angin kencang, kabut tebal, atau badai, yang bisa mengganggu proses lepas landas dan mendarat demi menjaga keselamatan.  Kondisi tersebut tidak hanya membuat pelanggan kecewa, tetapi juga menimbulkan penumpukan jadwal, peningkatan biaya operasional, dan gangguan terhadap jadwal kru serta armada. Jika keterlambatan terjadi terus-menerus, citra maskapai dapat menurun dan pelanggan beralih ke maskapai lain. Oleh karena itu, penting bagi perusahaan penerbangan untuk menganalisis pengaruh cuaca terhadap keterlambatan guna meningkatkan efisiensi dan kinerja operasional.
+    # ====== Konten Artikel ======
+    st.markdown(
+        """
+        <h3 style='text-align:left;'>🌦️ Bagaimana Cuaca Mempengaruhi Keterlambatan Penerbangan?</h3>
 
-            </p>
-            <p style='text-align:center; font-size:18px;'>
-                ✨ Jelajahi data dan temukan hubungannya hanya di dashboard ini! ✨
-            </p>
-            """,
-            unsafe_allow_html=True
-        )
+        <p style='text-align:justify; font-size:16px;'>
+            Perusahaan penerbangan harus menjaga kepuasan pelanggan karena kualitas pelayanan, terutama ketepatan waktu, 
+            sangat berpengaruh terhadap citra dan kinerja perusahaan. Peningkatan kualitas pelayanan memang membutuhkan 
+            biaya operasional yang lebih tinggi, namun citra baik yang terbentuk dapat meningkatkan kepercayaan dan 
+            penjualan tiket. Ketepatan waktu menjadi indikator penting dalam menilai kualitas pelayanan maskapai karena 
+            keterlambatan dapat merugikan penumpang dan perusahaan. Oleh sebab itu, setiap bentuk keterlambatan perlu 
+            dianalisis untuk menemukan faktor penyebabnya.
+        </p>
 
-    # ====== Footer ======
+        <p style='text-align:justify; font-size:16px;'>
+            Salah satu faktor yang diduga mempengaruhi keterlambatan adalah kondisi cuaca, seperti hujan deras, angin kencang, 
+            kabut tebal, atau badai, yang bisa mengganggu proses lepas landas dan mendarat demi menjaga keselamatan.  
+            Kondisi tersebut tidak hanya membuat pelanggan kecewa, tetapi juga menimbulkan penumpukan jadwal, peningkatan 
+            biaya operasional, dan gangguan terhadap jadwal kru serta armada. Jika keterlambatan terjadi terus-menerus, citra 
+            maskapai dapat menurun dan pelanggan beralih ke maskapai lain. Oleh karena itu, penting bagi perusahaan penerbangan 
+            untuk menganalisis pengaruh cuaca terhadap keterlambatan guna meningkatkan efisiensi dan kinerja operasional.
+        </p>
+
+        <p style='text-align:center; font-size:18px; margin-top:30px;'>
+            ✨ Jelajahi data dan temukan hubungannya hanya di dashboard ini! ✨
+        </p>
+        """,
+        unsafe_allow_html=True
+    )
+
+    # ====== PREVIEW DATASET ======
+    st.markdown("<hr>", unsafe_allow_html=True)
+    st.markdown("<h2>📊 Preview Dataset</h2>", unsafe_allow_html=True)
+    st.markdown("<h4>Dataset: Delay Penerbangan di New York Tahun 2013</h4>", unsafe_allow_html=True)
+
+    st.dataframe(df.head(50), use_container_width=True)
+
+    # ====== FOOTER ======
     st.markdown("<br><hr>", unsafe_allow_html=True)
     st.markdown(
         "<p style='text-align:center; font-size:14px;'>© 2025 Kelompok 2 | Exploratory Data Analysis Project</p>",
         unsafe_allow_html=True
     )
+
+
 
 # ==============================
 # PAGE: STATISTICS & KPI
@@ -294,182 +317,528 @@ elif selected == "Visualization & Interpretation":
     dests = sorted(df_vis["dest"].dropna().unique()) if "dest" in df_vis else []
     carriers = sorted(df_vis["carrier"].dropna().unique()) if "carrier" in df_vis else []
 
-    sel_origins = st.sidebar.multiselect("Origin:", origins, default=origins[:5] if origins else [])
-    sel_dests = st.sidebar.multiselect("Destination:", dests, default=dests[:5] if dests else [])
-    sel_carriers = st.sidebar.multiselect("Carrier:", carriers, default=[])
+    sel_origins = st.sidebar.multiselect(
+        "Origin:",
+        origins,
+        default=origins[:5] if origins else []
+    )
+
+    sel_dests = st.sidebar.multiselect(
+        "Destination:",
+        dests,
+        default=dests[:5] if dests else []
+    )
+
+    sel_carriers = st.sidebar.multiselect(
+        "Carrier:",
+        carriers,
+        default=[]
+    )
 
     if "date" in df_vis.columns:
         min_date, max_date = df_vis["date"].min(), df_vis["date"].max()
-        sel_date = st.sidebar.date_input("Rentang tanggal:", [min_date, max_date])
+        sel_date = st.sidebar.date_input(
+            "Rentang tanggal:",
+            [min_date, max_date]
+        )
 
     if "total_delay" in df_vis.columns:
         min_delay, max_delay = int(df_vis["total_delay"].min()), int(df_vis["total_delay"].max())
-        sel_delay = st.sidebar.slider("Rentang delay (menit):", min_delay, max_delay, (min_delay, max_delay))
-    else:
-        sel_delay = None
-
-    # ---------- FILTER INTERAKTIF (diletakkan setelah bagian visualisasi utama) ----------
-st.sidebar.header("🎛️ Filter Data")
-
-# Pilihan filter keren tapi ringan
-with st.sidebar.expander("✈️ Bandara & Maskapai", expanded=True):
-    sel_origins = st.multiselect(
-        "Pilih Bandara Asal",
-        sorted(df["origin"].unique()),
-        default=None,
-        placeholder="Bandara asal..."
-    )
-    sel_dests = st.multiselect(
-        "Pilih Bandara Tujuan",
-        sorted(df["dest"].unique()),
-        default=None,
-        placeholder="Bandara tujuan..."
-    )
-    sel_carriers = st.multiselect(
-        "Pilih Maskapai",
-        sorted(df["carrier"].unique()),
-        default=None,
-        placeholder="Maskapai..."
-    )
-
-with st.sidebar.expander("🗓️ Rentang Waktu & Delay", expanded=True):
-    if "date" in df.columns:
-        sel_date = st.date_input(
-            "Pilih Rentang Tanggal",
-            value=(df["date"].min(), df["date"].max())
-        )
-    else:
-        sel_date = None
-
-    if "total_delay" in df.columns:
-        sel_delay = st.slider(
-            "Filter Delay (menit)",
-            min_value=int(df["total_delay"].min()),
-            max_value=int(df["total_delay"].max()),
-            value=(int(df["total_delay"].min()), int(df["total_delay"].max()))
+        sel_delay = st.sidebar.slider(
+            "Rentang delay (menit):",
+            min_delay,
+            max_delay,
+            (min_delay, max_delay)
         )
     else:
         sel_delay = None
 
-# ---------- Apply Filters ----------
-df_vis = df.copy()
+    # ---------- Apply Filters ----------
+    if sel_origins:
+        df_vis = df_vis[df_vis["origin"].isin(sel_origins)]
+    if sel_dests:
+        df_vis = df_vis[df_vis["dest"].isin(sel_dests)]
+    if sel_carriers:
+        df_vis = df_vis[df_vis["carrier"].isin(sel_carriers)]
+    if "date" in df_vis.columns and sel_date:
+        start_d, end_d = pd.to_datetime(sel_date[0]), pd.to_datetime(sel_date[1])
+        df_vis = df_vis[(df_vis["date"] >= start_d) & (df_vis["date"] <= end_d)]
+    if sel_delay and "total_delay" in df_vis.columns:
+        df_vis = df_vis[(df_vis["total_delay"] >= sel_delay[0]) & (df_vis["total_delay"] <= sel_delay[1])]
 
-if sel_origins:
-    df_vis = df_vis[df_vis["origin"].isin(sel_origins)]
-if sel_dests:
-    df_vis = df_vis[df_vis["dest"].isin(sel_dests)]
-if sel_carriers:
-    df_vis = df_vis[df_vis["carrier"].isin(sel_carriers)]
-if "date" in df_vis.columns and sel_date:
-    start_d, end_d = pd.to_datetime(sel_date[0]), pd.to_datetime(sel_date[1])
-    df_vis = df_vis[(df_vis["date"] >= start_d) & (df_vis["date"] <= end_d)]
-if sel_delay and "total_delay" in df_vis.columns:
-    df_vis = df_vis[(df_vis["total_delay"] >= sel_delay[0]) & (df_vis["total_delay"] <= sel_delay[1])]
+    # Sampling (biar gak berat)
+    df_vis_sample = df_vis if use_full else df_vis.sample(n=min(len(df_vis), sample_n), random_state=42)
 
-# Sampling (biar gak berat)
-df_vis_sample = df_vis if use_full else df_vis.sample(n=min(len(df_vis), sample_n), random_state=42)
+    # Info dan download hasil filter
+    st.sidebar.success(f"✅ Data aktif: {len(df_vis_sample):,} baris")
+    st.sidebar.download_button(
+        "💾 Download filtered CSV",
+        data=df_vis_sample.to_csv(index=False).encode("utf-8"),
+        file_name="filtered_flights.csv",
+        mime="text/csv"
+    )
 
-# Info dan download hasil filter
-st.sidebar.success(f"✅ Data aktif: {len(df_vis_sample):,} baris")
-st.sidebar.download_button(
-    "💾 Download filtered CSV",
-    data=df_vis_sample.to_csv(index=False).encode("utf-8"),
-    file_name="filtered_flights.csv",
-    mime="text/csv"
-)
+    # ---------- Tabs ----------
+    tabs = st.tabs([
+        " Tren Keterlambatan Harian",
+        " Performa Maskapai",
+        " Diagram Pencar",
+        " Diagram Gelembung",
+        " Area / Stacked Plot",
+        " Diagram Lingkaran",
+        " Diagram Tabel",
+        " Diagram Polar",
+        " Histogram Delay",
+        " Diagram Lollipop",
+        " Diagram Terbaik",
+        " Heatmap Korelasi",
+        " Temperatur per Destinasi"
+    ])
 
- # ---------- Tabs ----------
-tabs = st.tabs([
-    "Histogram Delay", "Scatter Suhu vs Delay", "Bubble Delay vs Jarak",
-    "Area Delay Harian", "Pie Origin", "Bar Delay per Destinasi",
-    "Polar Wind", "Lollipop Distance", "Correlation Heatmap", "Tabel Statistik"
-])
+    # ========== 1️⃣ Tren Keterlambatan Harian ==========
+    with tabs[0]:
+        # Pastikan date bertipe datetime
+        df['date'] = pd.to_datetime(df['date'], errors='coerce')
 
-# Histogram
-with tabs[0]:
-    if "total_delay" in df_vis_sample:
-        fig = px.histogram(df_vis_sample, x="total_delay", nbins=50,
-                           color_discrete_sequence=[color_palette[2]],
-                           title="Distribusi Total Delay")
+        # Hitung rata-rata total_delay per tanggal
+        daily_delay = df.groupby('date')['total_delay'].mean().reset_index()
+
+        if not daily_delay.empty:
+            # Cari titik delay tertinggi
+            max_idx = daily_delay['total_delay'].idxmax()
+            max_date = daily_delay.loc[max_idx, 'date']
+            max_value = daily_delay.loc[max_idx, 'total_delay']
+
+            # Hitung rata-rata keseluruhan
+            mean_delay = daily_delay['total_delay'].mean()
+
+            # Buat figure
+            fig = go.Figure()
+
+            # Line utama
+            fig.add_trace(go.Scatter(
+                x=daily_delay['date'],
+                y=daily_delay['total_delay'],
+                mode='lines+markers',
+                name='Rata-rata Harian',
+                line=dict(color='#0074D9', width=3),
+                marker=dict(size=5, color='#005B96')
+            ))
+
+            # Highlight titik tertinggi
+            fig.add_trace(go.Scatter(
+                x=[max_date],
+                y=[max_value],
+                mode='markers+text',
+                name='Tertinggi',
+                marker=dict(color='red', size=12),
+                text=[f'{max_value:.1f}'],
+                textposition='top center'
+            ))
+
+            # Garis rata-rata
+            fig.add_hline(
+                y=mean_delay,
+                line_dash="dash",
+                line_color='#005B96',
+                annotation_text=f"Rata-rata: {mean_delay:.1f} menit",
+                annotation_position="bottom right"
+            )
+
+            # Layout
+            fig.update_layout(
+                title='Tren Keterlambatan Harian',
+                xaxis_title="Tanggal",
+                yaxis_title="Rata-rata Total Delay (menit)",
+                template='plotly_white',
+                hovermode="x unified",
+                title_font=dict(size=18, color='#0074D9', family='Arial')
+            )
+
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Data kosong untuk tren harian.")
+
+    # ========== 2️⃣ Performa Maskapai ==========
+    with tabs[1]:
+        # Hitung rata-rata keterlambatan kedatangan per maskapai
+        avg_delay = df.groupby('carrier')['arr_delay'].mean().reset_index()
+        avg_delay.columns = ['carrier', 'avg_arr_delay']
+
+        # Balik tanda delay: terlambat -> negatif, lebih cepat -> positif
+        avg_delay['adjusted_delay'] = -avg_delay['avg_arr_delay']
+
+        # Plot grafik horizontal
+        fig = px.bar(
+            avg_delay.sort_values('adjusted_delay', ascending=True),
+            x='adjusted_delay',
+            y='carrier',
+            orientation='h',
+            color='adjusted_delay',
+            color_continuous_scale=['navy', 'blue', 'skyblue'],
+            title='Performa Ketepatan Waktu Kedatangan per Maskapai (Nilai Positif = Lebih Cepat)'
+        )
+
+        fig.update_layout(
+            xaxis_title="Nilai Performa (menit)",
+            yaxis_title="Kode Maskapai",
+            title_font=dict(size=16, color='#0074D9', family='Arial'),
+            plot_bgcolor='white'
+        )
+
         st.plotly_chart(fig, use_container_width=True)
 
-# Scatter
-with tabs[1]:
-    if {"temperature_c", "total_delay"}.issubset(df_vis_sample.columns):
-        fig = px.scatter(df_vis_sample, x="temperature_c", y="total_delay",
-                         color="origin", color_discrete_sequence=color_palette,
-                         title="Suhu vs Total Delay (per Origin)")
+    # ========== 3️⃣ Diagram Pencar (wind_speed vs total_delay) ==========
+    with tabs[2]:
+        # Pastikan kolom ada
+        if {'wind_speed', 'total_delay'}.issubset(df.columns):
+            fig = px.scatter(
+                df.dropna(subset=['wind_speed', 'total_delay']),
+                x='wind_speed',
+                y='total_delay',
+                title='Pengaruh Kecepatan Angin terhadap Keterlambatan',
+                labels={'wind_speed': 'Kecepatan Angin', 'total_delay': 'Total Delay (menit)'},
+                opacity=0.6
+            )
+            fig.update_traces(marker=dict(color='#0074D9'))
+            fig.update_layout(
+                xaxis_title="Kecepatan Angin",
+                yaxis_title="Total Delay (menit)",
+                title_font=dict(size=18, color='#0074D9', family='Arial'),
+                plot_bgcolor='white'
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Kolom 'wind_speed' atau 'total_delay' tidak ditemukan.")
+
+    # ========== 4️⃣ Diagram Gelembung (humidity vs delay vs distance) ==========
+    with tabs[3]:
+        # Pastikan kolom ada
+        if {'humidity', 'arr_delay', 'distance'}.issubset(df.columns):
+            bubble_data = df[['humidity', 'arr_delay', 'distance', 'origin', 'carrier']].copy()
+            bubble_data = bubble_data.dropna(subset=['humidity', 'arr_delay', 'distance'])
+            fig = px.scatter(
+                bubble_data,
+                x='humidity',
+                y='arr_delay',
+                size='distance',
+                color='arr_delay',
+                hover_data=['origin', 'carrier'],
+                size_max=40,
+                color_continuous_scale=['#003366', '#0074D9', '#66B3FF', '#B3E5FF'],
+                title='Hubungan Kelembaban, Delay, dan Jarak Tempuh',
+                labels={
+                    'humidity': 'Kelembaban (%)',
+                    'arr_delay': 'Keterlambatan Kedatangan (menit)',
+                    'distance': 'Jarak Tempuh (km)'
+                },
+                opacity=0.7
+            )
+            fig.update_layout(
+                xaxis_title="Kelembaban (%)",
+                yaxis_title="Keterlambatan Kedatangan (menit)",
+                title_font=dict(size=18, color='#003F7F', family='Arial Black'),
+                plot_bgcolor='white',
+                paper_bgcolor='white',
+                font=dict(color='#003F7F', size=12),
+                coloraxis_colorbar_title="Delay (menit)",
+                showlegend=False
+            )
+            fig.update_traces(marker=dict(line=dict(width=0)))
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Kolom 'humidity', 'arr_delay', atau 'distance' tidak ditemukan.")
+
+    # ========== 5️⃣ Area / Stacked Plot (jumlah penerbangan per bulan per maskapai) ==========
+    with tabs[4]:
+        # Pastikan date bertipe datetime & buat kolom month
+        df['date'] = pd.to_datetime(df['date'], errors='coerce')
+        df['month'] = df['date'].dt.to_period('M').astype(str)
+
+        flight_count = df.groupby(['month', 'carrier']).size().reset_index(name='count')
+
+        if not flight_count.empty:
+            # Ambil daftar maskapai unik
+            unique_carriers = flight_count['carrier'].unique()
+            n = len(unique_carriers)
+
+            # Palet gradasi biru
+            def generate_blue_gradient(n):
+                if n == 1:
+                    return ['rgb(11,60,93)']
+                start = np.array([11, 60, 93])   # #0b3c5d
+                end = np.array([169, 214, 229])  # #a9d6e5
+                return [
+                    f'rgb({int(start[0] + (end[0] - start[0]) * i / (n-1))},'
+                    f'{int(start[1] + (end[1] - start[1]) * i / (n-1))},'
+                    f'{int(start[2] + (end[2] - start[2]) * i / (n-1))})'
+                    for i in range(n)
+                ]
+
+            blue_palette = generate_blue_gradient(n)
+            color_map = dict(zip(unique_carriers, blue_palette))
+
+            fig = px.area(
+                flight_count,
+                x='month',
+                y='count',
+                color='carrier',
+                title='Porsi Maskapai dari Waktu ke Waktu',
+                labels={'month': 'Bulan', 'count': 'Jumlah Penerbangan', 'carrier': 'Maskapai'},
+                color_discrete_map=color_map
+            )
+
+            fig.update_layout(
+                xaxis_title="Bulan",
+                yaxis_title="Jumlah Penerbangan",
+                title_font=dict(size=18, color='#003F7F', family='Arial'),
+                plot_bgcolor='white',
+                legend_title_text='Maskapai',
+                hovermode='x unified'
+            )
+
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Data kosong untuk area/stacked plot.")
+
+    # ========== 6️⃣ Diagram Lingkaran (total penerbangan per maskapai) ==========
+    with tabs[5]:
+        flight_share = df['carrier'].value_counts().reset_index()
+        flight_share.columns = ['carrier', 'count']
+
+        unique_carriers = flight_share['carrier'].unique()
+        n = len(unique_carriers)
+
+        # Buat palet jika banyak maskapai
+        def generate_blue_gradient(n):
+            if n == 1:
+                return ['rgb(11,60,93)']
+            start = np.array([11, 60, 93])
+            end = np.array([169, 214, 229])
+            return [
+                f'rgb({int(start[0] + (end[0] - start[0]) * i / (n-1))},'
+                f'{int(start[1] + (end[1] - start[1]) * i / (n-1))},'
+                f'{int(start[2] + (end[2] - start[2]) * i / (n-1))})'
+                for i in range(n)
+            ]
+
+        blue_palette = generate_blue_gradient(n)
+        color_map = dict(zip(unique_carriers, blue_palette))
+
+        fig = px.pie(
+            flight_share,
+            names='carrier',
+            values='count',
+            title='Jumlah Penerbangan Maskapai Secara Keseluruhan',
+            color='carrier',
+            color_discrete_map=color_map,
+            hole=0.3
+        )
+
+        fig.update_layout(
+            title_font=dict(size=18, color='#003F7F', family='Arial'),
+            legend_title_text='Maskapai'
+        )
+
         st.plotly_chart(fig, use_container_width=True)
 
-# Bubble
-with tabs[2]:
-    if {"distance", "total_delay"}.issubset(df_vis_sample.columns):
-        fig = px.scatter(df_vis_sample, x="distance", y="total_delay",
-                         size="wind_speed" if "wind_speed" in df_vis_sample else None,
-                         color="origin", color_discrete_sequence=color_palette,
-                         title="Bubble Chart: Distance vs Delay")
+    # ========== 7️⃣ Diagram Tabel ==========
+    with tabs[6]:
+        st.dataframe(df.head(20))
+        st.caption("📋 Menampilkan 20 baris pertama dari dataset yang digunakan.")
+
+    # ========== 8️⃣ Diagram Polar ==========
+    with tabs[7]:
+        # Tangani nilai NaN agar tidak menyebabkan error & buat skala
+        df['wind_speed'] = df['wind_speed'].fillna(0)
+        df['total_delay'] = df['total_delay'].fillna(0)
+        df['dep_delay'] = df['dep_delay'].fillna(0)
+        df['arr_delay'] = df['arr_delay'].fillna(0)
+        df['wind_speed_scaled'] = df['wind_speed'] * 50
+
+        fig = px.scatter_polar(
+            df,
+            r='wind_speed_scaled',
+            theta='carrier',
+            color='total_delay',
+            size='wind_speed',
+            hover_data=['dep_delay', 'arr_delay'],
+            title='Pola Kecepatan Angin dan Keterlambatan per Maskapai',
+            color_continuous_scale='Blues'
+        )
+
+        fig.update_layout(
+            template='plotly_white',
+            legend_title_text='Total Delay (menit)',
+            margin=dict(l=50, r=50, t=80, b=50),
+            polar=dict(
+                angularaxis=dict(
+                    direction='clockwise',
+                    tickfont=dict(size=10)
+                )
+            )
+        )
+
         st.plotly_chart(fig, use_container_width=True)
 
-# Area
-with tabs[3]:
-    if {"date", "total_delay"}.issubset(df_vis_sample.columns):
-        df_trend = df_vis_sample.groupby("date")["total_delay"].mean().reset_index()
-        fig = px.area(df_trend, x="date", y="total_delay",
-                      color_discrete_sequence=[color_palette[4]],
-                      title="Rata-rata Delay per Hari")
+    # ========== 9️⃣ Histogram keterlambatan ==========
+    with tabs[8]:
+        # Siapkan data dan filter outlier berlebih supaya rapi
+        if {'dep_delay', 'arr_delay'}.issubset(df.columns):
+            df_delay = df[['dep_delay', 'arr_delay']].dropna()
+            df_delay = df_delay[(df_delay['dep_delay'] < 500) & (df_delay['arr_delay'] < 500)]
+
+            fig1 = px.histogram(
+                df_delay, x="arr_delay", nbins=50,
+                title="Distribusi Delay Kedatangan"
+            )
+            fig2 = px.histogram(
+                df_delay, x="dep_delay", nbins=50,
+                title="Distribusi Delay Keberangkatan"
+            )
+            st.plotly_chart(fig1, use_container_width=True)
+            st.plotly_chart(fig2, use_container_width=True)
+        else:
+            st.info("Kolom 'dep_delay' atau 'arr_delay' tidak ditemukan.")
+
+    # ========== 🔟 Diagram Lollipop (Top 15 rute) ==========
+    with tabs[9]:
+        # Buat kolom rute
+        df['route'] = df['origin'] + ' → ' + df['dest']
+
+        # Hitung rata-rata keterlambatan per rute
+        route_delay = df.groupby('route')['arr_delay'].mean().sort_values(ascending=False).head(15).reset_index()
+
+        # Buat chart
+        fig = go.Figure()
+
+        # Garis (stick lolipop)
+        fig.add_trace(go.Scatter(
+            x=route_delay['arr_delay'],
+            y=route_delay['route'],
+            mode='lines',
+            line=dict(color='lightgray', width=4),
+            showlegend=False
+        ))
+
+        # Titik (lollipop head)
+        fig.add_trace(go.Scatter(
+            x=route_delay['arr_delay'],
+            y=route_delay['route'],
+            mode='markers',
+            marker=dict(size=14, color='#1d65a6', line=dict(width=2, color='white')),
+            name='Rata-rata Delay'
+        ))
+
+        # Layout aesthetic
+        fig.update_layout(
+            title='✈️ Top 15 Rute dengan Keterlambatan Kedatangan Tertinggi',
+            title_x=0.5,
+            xaxis_title='Rata-rata Keterlambatan (menit)',
+            yaxis_title='Rute Penerbangan',
+            template='plotly_white',
+            font=dict(size=12),
+            xaxis=dict(showgrid=True, gridcolor='rgba(200,200,200,0.2)'),
+            yaxis=dict(categoryorder='total ascending'),
+            margin=dict(l=120, r=50, t=80, b=50),
+            plot_bgcolor='rgba(0,0,0,0)',
+        )
+
         st.plotly_chart(fig, use_container_width=True)
 
-# Pie
-with tabs[4]:
-    if "origin" in df_vis_sample.columns:
-        top5 = df_vis_sample["origin"].value_counts().nlargest(5)
-        fig = px.pie(values=top5.values, names=top5.index,
-                     color_discrete_sequence=color_palette,
-                     title="Distribusi 5 Bandara Asal Teratas")
-        st.plotly_chart(fig, use_container_width=True)
+    # ========== 1️⃣1️⃣ Diagram Terbaik (wind_speed vs delay_difference per carrier) ==========
+    with tabs[10]:
+        if {'wind_speed', 'arr_delay', 'dep_delay', 'carrier'}.issubset(df.columns):
+            df['delay_difference'] = df['arr_delay'] - df['dep_delay']
+            fig = px.scatter(
+                df.dropna(subset=['wind_speed', 'delay_difference']),
+                x='wind_speed',
+                y='delay_difference',
+                color='carrier',
+                color_discrete_sequence=px.colors.sequential.Blues,
+                title='Pengaruh Kecepatan Angin terhadap Delay Difference per Maskapai'
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Kolom yang diperlukan untuk visualisasi ini tidak lengkap.")
 
-# Bar
-with tabs[5]:
-    if {"dest", "total_delay"}.issubset(df_vis_sample.columns):
-        delay_dest = df_vis_sample.groupby("dest")["total_delay"].mean().sort_values(ascending=False).head(10)
-        fig = px.bar(x=delay_dest.index, y=delay_dest.values,
-                     color=delay_dest.values, color_continuous_scale="Blues",
-                     labels={"x": "Destinasi", "y": "Rata-rata Delay"},
-                     title="Top 10 Destinasi dengan Delay Tertinggi")
-        st.plotly_chart(fig, use_container_width=True)
+    # ========== 1️⃣2️⃣ Heatmap Korelasi Faktor Cuaca ==========
+    with tabs[11]:
+        weather_cols = ["wind_speed", "humidity", "temperature_c", "delay_difference"]
+        # Pastikan delay_difference tersedia
+        if 'delay_difference' not in df.columns:
+            if {'arr_delay', 'dep_delay'}.issubset(df.columns):
+                df['delay_difference'] = df['arr_delay'] - df['dep_delay']
+        sub_df = df[weather_cols].dropna()
+        if not sub_df.empty:
+            corr = sub_df.corr()
+            fig = px.imshow(
+                corr, text_auto=True, aspect="auto",
+                color_continuous_scale="Blues",
+                title="Korelasi Faktor Cuaca terhadap Delay Difference"
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Data tidak cukup untuk menghitung korelasi faktor cuaca.")
 
-# Polar
-with tabs[6]:
-    if {"wind_speed", "wind_direction"}.issubset(df_vis_sample.columns):
-        fig = px.scatter_polar(df_vis_sample, r="wind_speed", theta="wind_direction",
-                               color="origin", color_discrete_sequence=color_palette,
-                               title="Distribusi Arah & Kecepatan Angin")
-        st.plotly_chart(fig, use_container_width=True)
+    # ========== 1️⃣3️⃣ Perbandingan Temperatur Tiap Bandara Tujuan ==========
+    with tabs[12]:
+        # Hitung rata-rata temperature per destination
+        if 'temperature' in df.columns and 'dest' in df.columns:
+            temp_dest = df.groupby('dest')['temperature'].mean().reset_index()
+            temp_dest = temp_dest.sort_values('temperature')
+            temp_dest = temp_dest.tail(15)  # ambil 15 teratas
 
-# Lollipop
-with tabs[7]:
-    if {"distance", "total_delay"}.issubset(df_vis_sample.columns):
-        avg_dist = df_vis_sample.groupby("distance")["total_delay"].mean().reset_index().sort_values("distance").tail(30)
-        fig = px.scatter(avg_dist, x="distance", y="total_delay",
-                         color_discrete_sequence=[color_palette[1]],
-                         title="Lollipop Chart: Delay vs Distance (30 terakhir)")
-        fig.update_traces(marker=dict(size=10))
-        st.plotly_chart(fig, use_container_width=True)
+            unique_dest = temp_dest['dest'].unique()
+            n = len(unique_dest)
 
-# Heatmap
-with tabs[8]:
-    num_cols = df_vis_sample.select_dtypes(include=["number"]).columns
-    if len(num_cols) > 1:
-        corr = df_vis_sample[num_cols].corr()
-        fig = px.imshow(corr, text_auto=True, aspect="auto",
-                        color_continuous_scale="PuBu",
-                        title="Heatmap Korelasi Variabel Numerik")
-        st.plotly_chart(fig, use_container_width=True)
+            def generate_blue_gradient(n):
+                if n == 1:
+                    return ['rgb(11,60,93)']
+                start = np.array([0, 31, 63])
+                end = np.array([163, 216, 255])
+                return [
+                    f'rgb({int(start[0] + (end[0] - start[0]) * i / (n-1))},'
+                    f'{int(start[1] + (end[1] - start[1]) * i / (n-1))},'
+                    f'{int(start[2] + (end[2] - start[2]) * i / (n-1))})'
+                    for i in range(n)
+                ]
+
+            colors = generate_blue_gradient(n)
+
+            fig = go.Figure()
+
+            fig.add_trace(go.Scatter(
+                x=temp_dest['dest'],
+                y=temp_dest['temperature'],
+                mode='lines',
+                line=dict(color='lightgray', width=2),
+                showlegend=False
+            ))
+
+            fig.add_trace(go.Scatter(
+                x=temp_dest['dest'],
+                y=temp_dest['temperature'],
+                mode='markers',
+                marker=dict(size=14, color=colors),
+                showlegend=False
+            ))
+
+            fig.update_layout(
+                title='Perbandingan Temperatur Tiap Bandara Tujuan',
+                xaxis_title='Bandara Tujuan (Dest)',
+                yaxis_title='Rata-rata Temperatur (°C)',
+                title_font=dict(size=18, color='#003F7F', family='Arial'),
+                plot_bgcolor='white'
+            )
+
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Kolom 'temperature' atau 'dest' tidak ditemukan.")
 # ==============================
 # PAGE: ABOUT
-# ============================
-# ⬇️ PENTING: Ini harus sejajar dengan "elif selected == 'Visualization & Interpretation':"
-if selected == "About":
+# ==============================
+elif selected == "About":
     st.title("ℹ️ Tentang Dashboard")
     st.markdown("""
     Dashboard ini dikembangkan untuk **analisis keterlambatan penerbangan dan faktor cuaca** 
